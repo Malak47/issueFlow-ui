@@ -90,18 +90,18 @@ export function MentionTextarea({ value, onChange, users, placeholder = '', requ
       />
 
       {trigger && suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-teal-200 bg-white shadow-lg">
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-emerald-200 bg-white shadow-lg">
           {suggestions.map((user, index) => (
             <button
               key={user.id}
               type="button"
               className={`flex w-full items-center gap-3 px-3 py-2 text-left transition ${
-                index === highlightedIndex ? 'bg-teal-50' : 'hover:bg-slate-50'
+                index === highlightedIndex ? 'bg-emerald-50' : 'hover:bg-slate-50'
               }`}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => selectMention(user)}
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-700 text-xs font-bold text-white">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-700 text-xs font-bold text-white">
                 {initialsFor(user.fullName)}
               </span>
               <span className="min-w-0">
@@ -145,16 +145,16 @@ export function MentionInbox({ currentUser, request, users }) {
   }, [loadMyMentions])
 
   return (
-    <section className="rounded-md bg-violet-50 p-3 ring-1 ring-violet-100">
+    <section className="rounded-md bg-sky-50 p-3 ring-1 ring-sky-100">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-violet-950">Who mentioned me?</h3>
-          <p className="text-xs text-violet-700">
+          <h3 className="text-sm font-semibold text-sky-950">Who mentioned me?</h3>
+          <p className="text-xs text-sky-700">
             {currentUser ? `Showing comments that mention @${currentUser.username}.` : 'Sign in to see your mentions.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <AtSign size={16} className="text-violet-700" />
+          <AtSign size={16} className="text-sky-700" />
           <button className="icon-btn h-8 w-8 bg-white" type="button" onClick={loadMyMentions} disabled={loading || !currentUser} title="Refresh mentions">
             <RefreshCw size={14} />
           </button>
@@ -165,7 +165,7 @@ export function MentionInbox({ currentUser, request, users }) {
 
       <div className="mt-3 space-y-2">
         {mentions.map((mention) => (
-          <article key={mention.id} className="rounded-md bg-white p-3 text-xs text-slate-700 ring-1 ring-violet-100">
+          <article key={mention.id} className="rounded-md bg-white p-3 text-xs text-slate-700 ring-1 ring-sky-100">
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="font-semibold text-slate-900">Ticket #{mention.ticketId}</span>
               <span className="text-slate-500">from {usernameFor(users, mention.authorId)}</span>
@@ -174,12 +174,12 @@ export function MentionInbox({ currentUser, request, users }) {
           </article>
         ))}
         {!loading && mentions.length === 0 && (
-          <div className="rounded-md bg-white px-3 py-4 text-center text-xs font-medium text-slate-500 ring-1 ring-violet-100">
+          <div className="rounded-md bg-white px-3 py-4 text-center text-xs font-medium text-slate-500 ring-1 ring-sky-100">
             No one mentioned you yet.
           </div>
         )}
         {loading && (
-          <div className="rounded-md bg-white px-3 py-4 text-center text-xs font-medium text-violet-700 ring-1 ring-violet-100">
+          <div className="rounded-md bg-white px-3 py-4 text-center text-xs font-medium text-sky-700 ring-1 ring-sky-100">
             Loading mentions...
           </div>
         )}

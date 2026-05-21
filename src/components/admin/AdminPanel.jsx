@@ -28,15 +28,20 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import {
+  AUDIT_ACTIONS,
+  AUDIT_ACTORS,
+  AUDIT_ENTITIES,
+  PRIORITIES,
+  ROLES,
+  STATUSES,
+  TYPES,
+  updateStatusOptions,
+} from '../../config/issueFlow.js'
+import { formatDate, initialsFor, projectNameFor, usernameFor } from '../../lib/formatters.js'
 import { MentionTextarea } from '../Mentions.jsx'
-
-const STATUSES = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']
-const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
-const TYPES = ['BUG', 'FEATURE', 'TECHNICAL']
-const ROLES = ['ADMIN', 'DEVELOPER']
-const AUDIT_ACTIONS = ['CREATE', 'UPDATE', 'DELETE', 'RESTORE', 'LOGIN', 'LOGOUT', 'AUTO_ASSIGN', 'AUTO_ESCALATE', 'ADD_DEPENDENCY', 'REMOVE_DEPENDENCY', 'IMPORT', 'EXPORT', 'UPLOAD_ATTACHMENT', 'DELETE_ATTACHMENT']
-const AUDIT_ENTITIES = ['USER', 'PROJECT', 'TICKET', 'COMMENT', 'DEPENDENCY', 'ATTACHMENT', 'AUTH']
-const AUDIT_ACTORS = ['USER', 'SYSTEM']
+import { UserForm } from '../users/UserForm.jsx'
+import { EmptyState, Field, PriorityBadge, RoleBadge, Select, StatusBadge, TabButton } from '../ui/Primitives.jsx'
 
 export function AdminPanel(props) {
   const {
@@ -139,12 +144,12 @@ export function AdminPanel(props) {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="inline-flex h-11 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 shadow-sm">
-              <Activity size={16} className="text-cyan-600" />
+              <Activity size={16} className="text-emerald-600" />
               Live workspace data
             </div>
-            <button className="btn border-cyan-700 bg-cyan-700 text-white shadow-cyan-900/20 hover:bg-cyan-800" type="button" onClick={exportAdminTicketsCsv}>
+            <button className="btn border-emerald-700 bg-emerald-700 text-white shadow-emerald-900/20 hover:bg-emerald-800" type="button" onClick={exportAdminTicketsCsv} title="Select exactly one project in Tickets before exporting">
               <FileDown size={16} />
-              Export CSV
+              Export project CSV
             </button>
             <button className="icon-btn" type="button" onClick={refreshAll} disabled={busy} title="Refresh data">
               <RefreshCw size={17} />
@@ -302,7 +307,7 @@ function OverviewPage({ auditLogs, deletedProjects, deletedTickets, projects, se
               <h2 className="text-lg font-semibold">Workspace snapshot</h2>
               <p className="text-sm text-slate-500">A compact summary of the records currently loaded from IssueFlow.</p>
             </div>
-            <Activity size={19} className="text-cyan-700" />
+            <Activity size={19} className="text-emerald-700" />
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <AdminMiniMetric icon={Folder} label="Projects" value={projects.length} tone="sage" />
@@ -413,7 +418,7 @@ function TicketsPage(props) {
               {visibleAdminTickets.map((ticket) => (
                 <tr
                   key={ticket.id}
-                  className={`cursor-pointer ${String(ticket.id) === String(selectedAdminTicket?.id) ? 'bg-cyan-50/80 shadow-[inset_4px_0_0_#0e7490]' : ''}`}
+                  className={`cursor-pointer ${String(ticket.id) === String(selectedAdminTicket?.id) ? 'bg-emerald-50/80 shadow-[inset_4px_0_0_#047857]' : ''}`}
                   onClick={() => openAdminTicket(ticket.id)}
                 >
                   <td>
@@ -493,6 +498,9 @@ function TicketsPage(props) {
 }
 
 function TicketEditCard({ adminTicketPatch, busy, deleteAdminTicket, selectedAdminTicket, setAdminTicketPatch, updateAdminTicket, users, projects }) {
+  const isDone = selectedAdminTicket?.status === 'DONE'
+  const statusOptions = updateStatusOptions(selectedAdminTicket?.status)
+
   return (
     <form className="admin-card admin-card-soft-blue space-y-4 p-5" onSubmit={updateAdminTicket}>
       <div className="flex items-start justify-between gap-3">
@@ -503,30 +511,30 @@ function TicketEditCard({ adminTicketPatch, busy, deleteAdminTicket, selectedAdm
         {selectedAdminTicket && <StatusBadge value={selectedAdminTicket.status} />}
       </div>
       <Field label="Title" required>
-        <input className="field" value={adminTicketPatch.title} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, title: event.target.value })} disabled={!selectedAdminTicket} required />
+        <input className="field" value={adminTicketPatch.title} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, title: event.target.value })} disabled={!selectedAdminTicket || isDone} required />
       </Field>
       <Field label="Description">
-        <textarea className="textarea-field min-h-28" value={adminTicketPatch.description} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, description: event.target.value })} disabled={!selectedAdminTicket} />
+        <textarea className="textarea-field min-h-28" value={adminTicketPatch.description} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, description: event.target.value })} disabled={!selectedAdminTicket || isDone} />
       </Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Status" required>
-          <Select value={adminTicketPatch.status} values={STATUSES} placeholder="Status" onChange={(status) => setAdminTicketPatch({ ...adminTicketPatch, status })} required />
+          <Select value={adminTicketPatch.status} values={statusOptions} placeholder="Status" onChange={(status) => setAdminTicketPatch({ ...adminTicketPatch, status })} required disabled={!selectedAdminTicket || isDone} />
         </Field>
         <Field label="Priority" required>
-          <Select value={adminTicketPatch.priority} values={PRIORITIES} placeholder="Priority" onChange={(priority) => setAdminTicketPatch({ ...adminTicketPatch, priority })} required />
+          <Select value={adminTicketPatch.priority} values={PRIORITIES} placeholder="Priority" onChange={(priority) => setAdminTicketPatch({ ...adminTicketPatch, priority })} required disabled={!selectedAdminTicket || isDone} />
         </Field>
       </div>
       <Field label="Assignee">
-        <select className="field" value={adminTicketPatch.assigneeId} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, assigneeId: event.target.value })} disabled={!selectedAdminTicket}>
-          <option value="">Unassigned</option>
+        <select className="field" value={adminTicketPatch.assigneeId} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, assigneeId: event.target.value })} disabled={!selectedAdminTicket || isDone}>
+          <option value="">Keep assignee</option>
           {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
         </select>
       </Field>
       <Field label="Due date">
-        <input className="field" type="datetime-local" value={adminTicketPatch.dueDate} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, dueDate: event.target.value })} disabled={!selectedAdminTicket} />
+        <input className="field" type="datetime-local" value={adminTicketPatch.dueDate} onChange={(event) => setAdminTicketPatch({ ...adminTicketPatch, dueDate: event.target.value })} disabled={!selectedAdminTicket || isDone} />
       </Field>
       <div className="grid grid-cols-2 gap-2">
-        <button className="btn btn-primary" disabled={!selectedAdminTicket || busy}><Save size={16} />Save</button>
+        <button className="btn btn-primary" disabled={!selectedAdminTicket || busy || isDone}><Save size={16} />Save</button>
         <button className="btn border-rose-200 text-rose-700 hover:bg-rose-50" type="button" onClick={deleteAdminTicket} disabled={!selectedAdminTicket || busy}><Trash2 size={16} />Delete</button>
       </div>
     </form>
@@ -701,12 +709,12 @@ function UsersPage({ busy, createUser, deleteUser, setUserForm, setUserPatch, up
           <h2 className="text-lg font-semibold">User management</h2>
           <p className="text-sm text-slate-500">Create users, update roles, and remove users from the workspace.</p>
         </div>
-        <UserCog size={19} className="text-blue-700" />
+        <UserCog size={19} className="text-sky-700" />
       </div>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <UserForm form={userForm} setForm={setUserForm} onSubmit={createUser} busy={busy} />
         <div className="hidden items-stretch justify-center px-1 lg:flex" aria-hidden="true">
-          <div className="relative w-px bg-gradient-to-b from-transparent via-blue-200 to-transparent" />
+          <div className="relative w-px bg-gradient-to-b from-transparent via-sky-200 to-transparent" />
         </div>
         <form className="grid gap-3" onSubmit={updateUser}>
           <Field label="User" required>
@@ -718,7 +726,7 @@ function UsersPage({ busy, createUser, deleteUser, setUserForm, setUserPatch, up
           <Field label="Role" required><Select value={userPatch.role} values={ROLES} onChange={(role) => setUserPatch({ ...userPatch, role })} required /></Field>
           <Field label="Full name" required><input className="field" value={userPatch.fullName} onChange={(event) => setUserPatch({ ...userPatch, fullName: event.target.value })} required /></Field>
           <div className="grid grid-cols-2 gap-2">
-            <button className="btn border-blue-600 text-blue-700 hover:bg-blue-50" disabled={!userPatch.userId || busy}><Save size={16} />Save</button>
+            <button className="btn border-sky-600 text-sky-700 hover:bg-sky-50" disabled={!userPatch.userId || busy}><Save size={16} />Save</button>
             <button className="btn border-rose-200 text-rose-700 hover:bg-rose-50" type="button" onClick={deleteUser} disabled={!userPatch.userId || busy}><Trash2 size={16} />Delete</button>
           </div>
         </form>
@@ -754,17 +762,17 @@ function ProjectsPage({ busy, createProject, deleteProject, projectEditorProject
               </select>
             </Field>
           </section>
-          <form className="space-y-3 rounded-md border border-blue-100 bg-blue-50/40 p-4" onSubmit={updateProject}>
+          <form className="space-y-3 rounded-md border border-sky-100 bg-sky-50/40 p-4" onSubmit={updateProject}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-blue-950">Edit details</h3>
-                <p className="text-xs text-blue-700">{projectEditorProject ? `Editing ${projectEditorProject.name}` : 'Select a project before editing.'}</p>
+                <h3 className="text-sm font-semibold text-sky-950">Edit details</h3>
+                <p className="text-xs text-sky-700">{projectEditorProject ? `Editing ${projectEditorProject.name}` : 'Select a project before editing.'}</p>
               </div>
-              {projectEditorProject && <span className="badge bg-white text-blue-700 ring-1 ring-blue-200">#{projectEditorProject.id}</span>}
+              {projectEditorProject && <span className="badge bg-white text-sky-700 ring-1 ring-sky-200">#{projectEditorProject.id}</span>}
             </div>
             <Field label="Name" required><input className="field" value={projectPatch.name} onChange={(event) => setProjectPatch({ ...projectPatch, name: event.target.value })} required disabled={!selectedProjectId} /></Field>
             <Field label="Description"><textarea className="textarea-field min-h-24" value={projectPatch.description} onChange={(event) => setProjectPatch({ ...projectPatch, description: event.target.value })} disabled={!selectedProjectId} /></Field>
-            <button className="btn w-full border-blue-600 text-blue-700 hover:bg-blue-50" disabled={!selectedProjectId || busy}><Save size={16} />Save changes</button>
+            <button className="btn w-full border-sky-600 text-sky-700 hover:bg-sky-50" disabled={!selectedProjectId || busy}><Save size={16} />Save changes</button>
           </form>
           <section className="rounded-md border border-rose-200 bg-rose-50 p-4">
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -804,13 +812,13 @@ function AuditPage({ applyAuditFilters, auditFilter, auditLogs, clearAuditFilter
     <section className="admin-card admin-card-soft-cyan flex h-full min-h-0 flex-col overflow-hidden p-5">
       <div className="mb-4 flex items-center justify-between">
         <div><h2 className="text-lg font-semibold">Audit log</h2><p className="text-sm text-slate-500">Filter operational events by action, entity, actor, or ID.</p></div>
-        <History size={19} className="text-cyan-700" />
+        <History size={19} className="text-emerald-700" />
       </div>
-      <form className="audit-filter-form mb-4 rounded-md bg-white/80 p-3 ring-1 ring-cyan-100" onSubmit={applyAuditFilters}>
+      <form className="audit-filter-form mb-4 rounded-md bg-white/80 p-3 ring-1 ring-emerald-100" onSubmit={applyAuditFilters}>
         <Select value={auditFilter.action} values={AUDIT_ACTIONS} placeholder="Action" onChange={(action) => setAuditFilter({ ...auditFilter, action })} />
         <Select value={auditFilter.entityType} values={AUDIT_ENTITIES} placeholder="Entity" onChange={(entityType) => setAuditFilter({ ...auditFilter, entityType })} />
         <Select value={auditFilter.actor} values={AUDIT_ACTORS} placeholder="Actor" onChange={(actor) => setAuditFilter({ ...auditFilter, actor })} />
-        <input className="field" placeholder="Entity ID" value={auditFilter.entityId} onChange={(event) => setAuditFilter({ ...auditFilter, entityId: event.target.value })} />
+        <input className="field" type="number" min="1" placeholder="Entity ID" value={auditFilter.entityId} onChange={(event) => setAuditFilter({ ...auditFilter, entityId: event.target.value })} />
         <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:justify-end">
           <button className="btn btn-primary w-full min-w-0 px-4 sm:w-auto sm:min-w-24"><Search size={15} />Apply</button>
           <button className="btn w-full min-w-0 px-4 sm:w-auto sm:min-w-24" type="button" onClick={clearAuditFilters}><X size={15} />Clear</button>
@@ -838,7 +846,7 @@ function AdminSidebar({ currentUser, activePage, onSelectPage, onLogout, onRefre
   return (
     <aside className="admin-sidebar">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-900/20">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-900/20">
           <GitBranch size={21} />
         </div>
         <div className="text-lg font-semibold">IssueFlow</div>
@@ -846,7 +854,7 @@ function AdminSidebar({ currentUser, activePage, onSelectPage, onLogout, onRefre
 
       <div className="rounded-lg border border-slate-800 bg-slate-900 p-3 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-500 text-sm font-bold text-slate-950">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-slate-950">
             {initialsFor(currentUser?.fullName || currentUser?.username)}
           </div>
           <div className="min-w-0 flex-1">
@@ -881,7 +889,7 @@ function ProjectMultiSelect({ label, projects, selectedProjectIds, onToggle, onC
         <ChevronRight size={14} className="transition group-open:rotate-90" />
       </summary>
       <div className="absolute right-0 z-50 mt-2 w-full rounded-lg border border-slate-200 bg-white p-2 shadow-xl shadow-slate-300/60">
-        <button className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm font-semibold transition ${selectedProjectIds.length === 0 ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50'}`} type="button" onClick={onClear}>
+        <button className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm font-semibold transition ${selectedProjectIds.length === 0 ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'}`} type="button" onClick={onClear}>
           All projects
           {selectedProjectIds.length === 0 && <Check size={15} />}
         </button>
@@ -903,40 +911,6 @@ function ProjectMultiSelect({ label, projects, selectedProjectIds, onToggle, onC
   )
 }
 
-function UserForm({ form, setForm, onSubmit, busy }) {
-  return (
-    <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
-      <Field label="Username" required><input className="field" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required /></Field>
-      <Field label="Email" required><input className="field" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></Field>
-      <Field label="Full name" required><input className="field" value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} required /></Field>
-      <Field label="Role" required><Select value={form.role} values={ROLES} onChange={(role) => setForm({ ...form, role })} required /></Field>
-      <button className="btn btn-primary sm:col-span-2" disabled={busy}><UserPlus size={16} />Create user</button>
-    </form>
-  )
-}
-
-function Field({ label, children, required = false, className = '' }) {
-  return <label className={className}><span className="label">{label}{required && <span className="text-rose-600"> *</span>}</span>{children}</label>
-}
-
-function Select({ value, values, onChange, placeholder, required = false }) {
-  return (
-    <select className="field" value={value} onChange={(event) => onChange(event.target.value)} required={required}>
-      {placeholder && <option value="">{placeholder}</option>}
-      {values.map((item) => <option key={item} value={item}>{item}</option>)}
-    </select>
-  )
-}
-
-function TabButton({ active, onClick, icon: Icon, label }) {
-  return (
-    <button className={`flex items-center justify-center gap-1.5 border-r border-slate-200 px-2 py-3 transition duration-200 last:border-r-0 ${active ? 'bg-cyan-50 text-cyan-800 shadow-[inset_0_-2px_0_#0e7490]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`} onClick={onClick} type="button">
-      <Icon size={15} />
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  )
-}
-
 function RestoreRow({ label, onClick }) {
   return (
     <div className="interactive-card flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-sm">
@@ -946,15 +920,11 @@ function RestoreRow({ label, onClick }) {
   )
 }
 
-function EmptyState({ label }) {
-  return <div className="flex min-h-28 items-center justify-center gap-2 rounded-md bg-white/50 text-sm font-medium text-slate-500"><CircleDot size={16} className="text-cyan-600" />{label}</div>
-}
-
 function AdminSummaryCard({ icon: Icon, label, value, action, tone, target, onSelect }) {
   const tones = {
-    blue: 'border-blue-100 bg-blue-50 text-blue-700',
+    blue: 'border-sky-100 bg-sky-50 text-sky-700',
     sage: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    cyan: 'border-cyan-100 bg-cyan-50 text-cyan-700',
+    cyan: 'border-emerald-100 bg-emerald-50 text-emerald-700',
     amber: 'border-amber-100 bg-amber-50 text-amber-700',
   }
 
@@ -973,8 +943,8 @@ function AdminSummaryCard({ icon: Icon, label, value, action, tone, target, onSe
 function AdminMiniMetric({ icon: Icon, label, value, tone }) {
   const tones = {
     sage: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    blue: 'border-blue-100 bg-blue-50 text-blue-700',
-    cyan: 'border-cyan-100 bg-cyan-50 text-cyan-700',
+    blue: 'border-sky-100 bg-sky-50 text-sky-700',
+    cyan: 'border-emerald-100 bg-emerald-50 text-emerald-700',
     rose: 'border-rose-100 bg-rose-50 text-rose-700',
   }
   return <div className={`rounded-lg border p-4 ${tones[tone] || tones.sage}`}><div className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold uppercase tracking-wide">{label}</div><div className="mt-1 text-3xl font-semibold text-slate-950">{value}</div></div><div className="rounded-md bg-white/80 p-2 shadow-sm"><Icon size={20} /></div></div></div>
@@ -983,11 +953,11 @@ function AdminMiniMetric({ icon: Icon, label, value, tone }) {
 function AdminRecentAudit({ logs, users, projects, tickets, onOpenAudit }) {
   return (
     <section id="admin-recent-audit" className="admin-card admin-card-soft-cyan p-5">
-      <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-base font-semibold">Recent audit events</h2><button className="text-xs font-bold text-cyan-700" type="button" onClick={onOpenAudit}>View all</button></div>
+      <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-base font-semibold">Recent audit events</h2><button className="text-xs font-bold text-emerald-700" type="button" onClick={onOpenAudit}>View all</button></div>
       <div className="space-y-4">
         {logs.slice(0, 5).map((log) => (
           <div key={log.id} className="flex gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100"><History size={15} /></div>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"><History size={15} /></div>
             <div className="min-w-0"><div className="line-clamp-2 text-sm font-semibold text-slate-800">{auditActorLabel(log, users)} {auditActionSentence(log.action).toLowerCase()} {auditEntityLabel(log, { users, projects, tickets })}</div><div className="mt-1 text-xs text-slate-500">{formatDate(log.timestamp)}</div></div>
           </div>
         ))}
@@ -1001,7 +971,7 @@ function AdminQuickActions({ onJump, onExport }) {
   const actions = [
     { label: 'Create new project', icon: Plus, onClick: () => onJump('projects') },
     { label: 'Invite new user', icon: UserPlus, onClick: () => onJump('users') },
-    { label: 'Export tickets CSV', icon: FileDown, onClick: onExport },
+    { label: 'Export project CSV', icon: FileDown, onClick: onExport },
     { label: 'Open audit filters', icon: Settings, onClick: () => onJump('audit') },
   ]
   return <section className="admin-card admin-card-soft-blue p-5"><h2 className="mb-4 text-base font-semibold">Quick actions</h2><div className="space-y-2">{actions.map(({ label, icon: Icon, onClick }) => <button key={label} className="admin-action-row" type="button" onClick={onClick}><span className="flex items-center gap-2"><Icon size={15} />{label}</span><ChevronRight size={15} /></button>)}</div></section>
@@ -1012,21 +982,6 @@ function AdminHealth({ overdueCount, deletedCount }) {
   return <section className="admin-card admin-card-soft-sage p-5"><h2 className="mb-4 text-base font-semibold">Workspace health</h2><div className={`rounded-lg border p-4 ${healthy ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-rose-100 bg-rose-50 text-rose-800'}`}><div className="flex items-start gap-3"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm"><Check size={17} /></div><div><div className="text-sm font-bold">{healthy ? 'All systems operational' : `${overdueCount} overdue ticket${overdueCount === 1 ? '' : 's'}`}</div><div className="mt-1 text-xs">{deletedCount} deleted item{deletedCount === 1 ? '' : 's'} available in recovery.</div></div></div></div></section>
 }
 
-function RoleBadge({ value }) {
-  const classes = { ADMIN: 'bg-cyan-50 text-cyan-700 ring-cyan-200', DEVELOPER: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
-  return <span className={`badge ring-1 ${classes[value] || classes.DEVELOPER}`}>{value}</span>
-}
-
-function StatusBadge({ value }) {
-  const classes = { TODO: 'bg-slate-100 text-slate-700 ring-slate-200', IN_PROGRESS: 'bg-blue-50 text-blue-700 ring-blue-200', IN_REVIEW: 'bg-amber-50 text-amber-700 ring-amber-200', DONE: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
-  return <span className={`badge ring-1 ${classes[value] || classes.TODO}`}>{value}</span>
-}
-
-function PriorityBadge({ value, overdue }) {
-  const classes = { LOW: 'bg-slate-100 text-slate-700 ring-slate-200', MEDIUM: 'bg-blue-50 text-blue-700 ring-blue-200', HIGH: 'bg-orange-50 text-orange-700 ring-orange-200', CRITICAL: 'bg-rose-50 text-rose-700 ring-rose-200' }
-  return <span className={`badge ring-1 ${classes[value] || classes.LOW}`}>{overdue ? `${value} OVERDUE` : value}</span>
-}
-
 function AuditActionBadge({ value }) {
   const danger = ['DELETE', 'DELETE_ATTACHMENT']
   const success = ['CREATE', 'RESTORE', 'IMPORT']
@@ -1035,24 +990,15 @@ function AuditActionBadge({ value }) {
   if (danger.includes(value)) classes = 'bg-rose-50 text-rose-700 ring-rose-200'
   if (success.includes(value)) classes = 'bg-emerald-50 text-emerald-700 ring-emerald-200'
   if (system.includes(value)) classes = 'bg-amber-50 text-amber-700 ring-amber-200'
-  if (value === 'UPDATE') classes = 'bg-cyan-50 text-cyan-700 ring-cyan-200'
+  if (value === 'UPDATE') classes = 'bg-sky-50 text-sky-700 ring-sky-200'
   return <span className={`badge ring-1 ${classes}`}>{value}</span>
 }
 
 function AuditLogCard({ log, users, projects, tickets }) {
   const actor = auditActorLabel(log, users)
   const entity = auditEntityLabel(log, { users, projects, tickets })
-  const tone = ['DELETE', 'DELETE_ATTACHMENT'].includes(log.action) ? 'border-l-rose-500' : log.actor === 'SYSTEM' ? 'border-l-amber-500' : 'border-l-cyan-500'
+  const tone = ['DELETE', 'DELETE_ATTACHMENT'].includes(log.action) ? 'border-l-rose-500' : log.actor === 'SYSTEM' ? 'border-l-amber-500' : 'border-l-emerald-500'
   return <article className={`rounded-lg border border-slate-200 border-l-4 ${tone} bg-white p-4 text-sm shadow-sm`}><div className="flex flex-wrap items-center justify-between gap-2"><AuditActionBadge value={log.action} /><span className="text-xs font-semibold text-slate-500">{formatDate(log.timestamp)}</span></div><div className="mt-3 text-base font-semibold text-slate-900">{auditActionSentence(log.action)} {entity}</div><div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-3"><div><span className="block font-bold uppercase tracking-wide text-slate-400">Performed by</span><span>{actor}</span></div><div><span className="block font-bold uppercase tracking-wide text-slate-400">Entity</span><span>{log.entityType} #{log.entityId}</span></div><div><span className="block font-bold uppercase tracking-wide text-slate-400">Source</span><span>{log.actor}</span></div></div></article>
-}
-
-function usernameFor(users, id) {
-  if (!id) return ''
-  return users.find((user) => user.id === id)?.username || `#${id}`
-}
-
-function projectNameFor(projects, id) {
-  return projects.find((project) => String(project.id) === String(id))?.name || `Project #${id}`
 }
 
 function auditActorLabel(log, users) {
@@ -1082,13 +1028,4 @@ function auditEntityLabel(log, { users, projects, tickets }) {
 function auditActionSentence(action) {
   const labels = { CREATE: 'Created', UPDATE: 'Updated', DELETE: 'Deleted', RESTORE: 'Restored', LOGIN: 'Signed in as', LOGOUT: 'Signed out', AUTO_ASSIGN: 'Auto-assigned', AUTO_ESCALATE: 'Auto-escalated', ADD_DEPENDENCY: 'Added dependency', REMOVE_DEPENDENCY: 'Removed dependency', IMPORT: 'Imported', EXPORT: 'Exported', UPLOAD_ATTACHMENT: 'Uploaded attachment', DELETE_ATTACHMENT: 'Deleted attachment' }
   return labels[action] || action
-}
-
-function initialsFor(value) {
-  return String(value || '?').trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
-}
-
-function formatDate(value) {
-  if (!value) return 'None'
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
