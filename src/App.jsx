@@ -1,8 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  AtSign,
-  ArchiveRestore,
   Bug,
   CalendarDays,
   Check,
@@ -11,7 +9,6 @@ import {
   Download,
   FileUp,
   GitBranch,
-  History,
   LogOut,
   MessageSquare,
   Paperclip,
@@ -22,12 +19,13 @@ import {
   Shield,
   Trash2,
   Upload,
-  UserCog,
   UserPlus,
   Users,
   X,
 } from 'lucide-react'
 import heroImage from './assets/hero.png'
+import { AdminPanel } from './components/admin/AdminPanel.jsx'
+import { MentionInbox, MentionTextarea } from './components/Mentions.jsx'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -35,9 +33,6 @@ const STATUSES = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE']
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 const TYPES = ['BUG', 'FEATURE', 'TECHNICAL']
 const ROLES = ['ADMIN', 'DEVELOPER']
-const AUDIT_ACTIONS = ['CREATE', 'UPDATE', 'DELETE', 'RESTORE', 'LOGIN', 'LOGOUT', 'AUTO_ASSIGN', 'AUTO_ESCALATE', 'ADD_DEPENDENCY', 'REMOVE_DEPENDENCY', 'IMPORT', 'EXPORT', 'UPLOAD_ATTACHMENT', 'DELETE_ATTACHMENT']
-const AUDIT_ENTITIES = ['USER', 'PROJECT', 'TICKET', 'COMMENT', 'DEPENDENCY', 'ATTACHMENT', 'AUTH']
-const AUDIT_ACTORS = ['USER', 'SYSTEM']
 
 const emptyTicketForm = {
   title: '',
@@ -62,11 +57,14 @@ function App() {
   const [deletedTickets, setDeletedTickets] = useState([])
   const [deletedProjects, setDeletedProjects] = useState([])
   const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [adminManageProjectId, setAdminManageProjectId] = useState('')
   const [selectedTicketId, setSelectedTicketId] = useState('')
   const [activePanel, setActivePanel] = useState('comments')
   const [ticketScope, setTicketScope] = useState('all')
-  const [adminProjectScope, setAdminProjectScope] = useState('all')
+  const [adminProjectIds, setAdminProjectIds] = useState([])
   const [adminTickets, setAdminTickets] = useState([])
+  const [adminPage, setAdminPage] = useState('overview')
+  const [selectedAdminTicketId, setSelectedAdminTicketId] = useState('')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -83,6 +81,7 @@ function App() {
   const [projectPatch, setProjectPatch] = useState({ name: '', description: '' })
   const [ticketForm, setTicketForm] = useState(emptyTicketForm)
   const [ticketPatch, setTicketPatch] = useState({ status: '', priority: '', assigneeId: '', dueDate: '' })
+  const [adminTicketPatch, setAdminTicketPatch] = useState({ title: '', description: '', status: '', priority: '', assigneeId: '', dueDate: '' })
   const [userPatch, setUserPatch] = useState({ userId: '', fullName: '', role: 'DEVELOPER' })
   const [commentText, setCommentText] = useState('')
   const [editingCommentId, setEditingCommentId] = useState('')
@@ -91,21 +90,61 @@ function App() {
   const [attachmentFile, setAttachmentFile] = useState(null)
   const [uploadedAttachments, setUploadedAttachments] = useState([])
   const [csvFile, setCsvFile] = useState(null)
-  const [mentionUserId, setMentionUserId] = useState('')
-  const [mentions, setMentions] = useState([])
   const [auditFilter, setAuditFilter] = useState({ action: '', entityType: '', actor: '', entityId: '' })
 
   const isAdmin = currentUser?.role === 'ADMIN'
   const selectedProject = projects.find((project) => project.id === Number(selectedProjectId))
+  const managedProject = projects.find((project) => String(project.id) === String(adminManageProjectId))
+  const projectEditorProject = isAdmin ? managedProject : selectedProject
   const selectedTicket = tickets.find((ticket) => ticket.id === Number(selectedTicketId))
   const openTickets = tickets.filter((ticket) => ticket.status !== 'DONE').length
   const overdueTickets = tickets.filter((ticket) => ticket.isOverdue).length
   const localAttachments = uploadedAttachments.filter((attachment) => String(attachment.ticketId) === String(selectedTicketId))
   const myTickets = tickets.filter((ticket) => String(ticket.assigneeId) === String(currentUser?.id) && ticket.status !== 'DONE')
   const urgentTickets = tickets.filter((ticket) => ['HIGH', 'CRITICAL'].includes(ticket.priority) && ticket.status !== 'DONE')
-  const visibleAdminTickets = adminTickets.filter((ticket) => adminProjectScope === 'all' || String(ticket.projectId) === String(adminProjectScope))
-  const visibleAdminOpenTickets = visibleAdminTickets.filter((ticket) => ticket.status !== 'DONE')
-  const visibleAdminOverdueTickets = visibleAdminTickets.filter((ticket) => ticket.isOverdue)
+  const visibleAdminTickets = useMemo(
+    () => adminTickets.filter((ticket) => adminProjectIds.length === 0 || adminProjectIds.includes(String(ticket.projectId))),
+    [adminProjectIds, adminTickets],
+  )
+  const visibleAdminOpenTickets = useMemo(
+    () => visibleAdminTickets.filter((ticket) => ticket.status !== 'DONE'),
+    [visibleAdminTickets],
+  )
+  const visibleAdminOverdueTickets = useMemo(
+    () => visibleAdminTickets.filter((ticket) => ticket.isOverdue),
+    [visibleAdminTickets],
+  )
+  const selectedAdminTicket = adminTickets.find((ticket) => String(ticket.id) === String(selectedAdminTicketId))
+  const adminProjectFilterLabel = adminProjectIds.length === 0
+    ? 'All projects'
+    : `${adminProjectIds.length} project${adminProjectIds.length === 1 ? '' : 's'} selected`
+  const adminPageMeta = {
+    overview: {
+      title: 'Overview',
+      description: 'Workspace health, quick actions, and recent operational activity.',
+    },
+    projects: {
+      title: 'Projects',
+      description: 'Create, edit, and soft-delete project records.',
+    },
+    tickets: {
+      title: 'Tickets',
+      description: 'Review tickets across projects and edit ticket details as an admin.',
+    },
+    users: {
+      title: 'Users',
+      description: 'Create users and update roles.',
+    },
+    recovery: {
+      title: 'Recovery',
+      description: 'Restore soft-deleted tickets and projects.',
+    },
+    audit: {
+      title: 'Audit log',
+      description: 'Filter operational events by action, entity, actor, or ID.',
+    },
+  }
+  const activeAdminMeta = adminPageMeta[adminPage] || adminPageMeta.overview
 
   const scopedTickets = useMemo(() => {
     if (ticketScope !== 'mine') return tickets
@@ -171,6 +210,22 @@ function App() {
     } finally {
       setBusy(false)
     }
+  }
+
+  useEffect(() => {
+    if (!notice && !error) return undefined
+
+    const timeoutId = window.setTimeout(() => {
+      setNotice('')
+      setError('')
+    }, error ? 6500 : 3500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [error, notice])
+
+  const dismissToast = () => {
+    setNotice('')
+    setError('')
   }
 
   const validateRequired = (fields) => {
@@ -295,12 +350,23 @@ function App() {
   }, [loadProjectData, selectedProjectId, token])
 
   useEffect(() => {
-    if (!selectedProject) {
+    if (!projectEditorProject) {
       setProjectPatch({ name: '', description: '' })
       return
     }
-    setProjectPatch({ name: selectedProject.name || '', description: selectedProject.description || '' })
-  }, [selectedProject])
+    setProjectPatch({ name: projectEditorProject.name || '', description: projectEditorProject.description || '' })
+  }, [projectEditorProject])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    if (projects.length === 0) {
+      setAdminManageProjectId('')
+      return
+    }
+    if (!projects.some((project) => String(project.id) === String(adminManageProjectId))) {
+      setAdminManageProjectId(String(projects[0].id))
+    }
+  }, [adminManageProjectId, isAdmin, projects])
 
   useEffect(() => {
     const user = users.find((entry) => String(entry.id) === String(userPatch.userId))
@@ -340,6 +406,28 @@ function App() {
       active = false
     }
   }, [isAdmin, loadAdminTickets, token])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    if (visibleAdminTickets.some((ticket) => String(ticket.id) === String(selectedAdminTicketId))) return
+    setSelectedAdminTicketId(visibleAdminTickets[0] ? String(visibleAdminTickets[0].id) : '')
+  }, [isAdmin, selectedAdminTicketId, visibleAdminTickets])
+
+  useEffect(() => {
+    if (!selectedAdminTicket) {
+      setAdminTicketPatch({ title: '', description: '', status: '', priority: '', assigneeId: '', dueDate: '' })
+      return
+    }
+
+    setAdminTicketPatch({
+      title: selectedAdminTicket.title || '',
+      description: selectedAdminTicket.description || '',
+      status: selectedAdminTicket.status || '',
+      priority: selectedAdminTicket.priority || '',
+      assigneeId: selectedAdminTicket.assigneeId ? String(selectedAdminTicket.assigneeId) : '',
+      dueDate: toDateTimeLocal(selectedAdminTicket.dueDate),
+    })
+  }, [selectedAdminTicket])
 
   useEffect(() => {
     if (currentUser?.role === 'DEVELOPER') {
@@ -428,30 +516,38 @@ function App() {
       })
       setProjectForm({ name: '', description: '' })
       await loadProjects()
-      setSelectedProjectId(String(project.id))
+      if (isAdmin) {
+        setAdminManageProjectId(String(project.id))
+      } else {
+        setSelectedProjectId(String(project.id))
+      }
     }, 'Project created')
   }
 
   const updateProject = async (event) => {
     event.preventDefault()
+    const projectId = isAdmin ? adminManageProjectId : selectedProjectId
     if (!validateRequired([
-      { label: 'Project', value: selectedProjectId },
+      { label: 'Project', value: projectId },
       { label: 'Project name', value: projectPatch.name },
     ])) return
 
     await run(async () => {
-      await request(`/projects/${selectedProjectId}`, { method: 'PATCH', body: projectPatch })
-      await Promise.all([loadProjects(), loadAuditLogs()])
+      await request(`/projects/${projectId}`, { method: 'PATCH', body: projectPatch })
+      await Promise.all([loadProjects(), loadAuditLogs(), loadAdminTickets()])
     }, 'Project updated')
   }
 
   const deleteProject = async () => {
-    if (!selectedProjectId) return
+    const projectId = isAdmin ? adminManageProjectId : selectedProjectId
+    if (!projectId) return
     await run(async () => {
-      await request(`/projects/${selectedProjectId}`, { method: 'DELETE' })
-      setSelectedProjectId('')
+      await request(`/projects/${projectId}`, { method: 'DELETE' })
+      if (String(selectedProjectId) === String(projectId)) setSelectedProjectId('')
+      if (String(adminManageProjectId) === String(projectId)) setAdminManageProjectId('')
+      setAdminProjectIds((current) => current.filter((id) => String(id) !== String(projectId)))
       setSelectedTicketId('')
-      await Promise.all([loadProjects(), loadDeleted(), loadAuditLogs()])
+      await Promise.all([loadProjects(), loadDeleted(), loadAuditLogs(), loadAdminTickets()])
     }, 'Project deleted')
   }
 
@@ -517,6 +613,38 @@ function App() {
       setTicketPatch({ status: '', priority: '', assigneeId: '', dueDate: '' })
       await Promise.all([loadProjectData(), loadAuditLogs()])
     }, 'Ticket updated')
+  }
+
+  const updateAdminTicket = async (event) => {
+    event.preventDefault()
+    if (!validateRequired([
+      { label: 'Ticket', value: selectedAdminTicketId },
+      { label: 'Title', value: adminTicketPatch.title },
+      { label: 'Status', value: adminTicketPatch.status },
+      { label: 'Priority', value: adminTicketPatch.priority },
+    ])) return
+
+    await run(async () => {
+      const body = compact({
+        title: adminTicketPatch.title,
+        description: adminTicketPatch.description,
+        status: adminTicketPatch.status,
+        priority: adminTicketPatch.priority,
+        assigneeId: adminTicketPatch.assigneeId ? Number(adminTicketPatch.assigneeId) : null,
+        dueDate: toInstant(adminTicketPatch.dueDate),
+      })
+      await request(`/tickets/${selectedAdminTicketId}`, { method: 'PATCH', body })
+      await Promise.all([loadProjectData(), loadAuditLogs(), loadAdminTickets()])
+    }, 'Ticket updated')
+  }
+
+  const deleteAdminTicket = async () => {
+    if (!selectedAdminTicketId) return
+    await run(async () => {
+      await request(`/tickets/${selectedAdminTicketId}`, { method: 'DELETE' })
+      setSelectedAdminTicketId('')
+      await Promise.all([loadProjectData(), loadDeleted(), loadAuditLogs(), loadAdminTickets()])
+    }, 'Ticket deleted')
   }
 
   const startEditComment = (comment) => {
@@ -642,6 +770,45 @@ function App() {
     }, 'CSV exported')
   }
 
+  const exportAdminTicketsCsv = async () => {
+    await run(async () => {
+      if (adminProjectIds.length === 1) {
+        const [projectId] = adminProjectIds
+        const response = await fetch(`${API_BASE}/tickets/export?projectId=${projectId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) throw new Error('CSV export failed')
+        downloadText(await response.text(), `issueflow-project-${projectId}.csv`, 'text/csv')
+        return
+      }
+
+      const header = 'id,title,description,status,priority,type,projectId,assigneeId,dueDate,isOverdue'
+      const rows = visibleAdminTickets.map((ticket) => [
+        ticket.id,
+        ticket.title,
+        ticket.description,
+        ticket.status,
+        ticket.priority,
+        ticket.type,
+        ticket.projectId,
+        ticket.assigneeId || '',
+        ticket.dueDate || '',
+        ticket.isOverdue,
+      ].map(csvValue).join(','))
+      const fileName = adminProjectIds.length > 1 ? 'issueflow-selected-projects.csv' : 'issueflow-all-projects.csv'
+      downloadText([header, ...rows].join('\n'), fileName, 'text/csv')
+    }, 'CSV exported')
+  }
+
+  const toggleAdminProjectFilter = (projectId) => {
+    const normalized = String(projectId)
+    setAdminProjectIds((current) => (
+      current.includes(normalized)
+        ? current.filter((id) => id !== normalized)
+        : [...current, normalized]
+    ))
+  }
+
   const importCsv = async (event) => {
     event.preventDefault()
     if (!validateRequired([
@@ -659,18 +826,6 @@ function App() {
       event.currentTarget.reset()
       await Promise.all([loadProjectData(), loadAuditLogs()])
     })
-  }
-
-  const loadMentions = async (event) => {
-    event.preventDefault()
-    if (!validateRequired([
-      { label: 'User', value: mentionUserId },
-    ])) return
-
-    await run(async () => {
-      const payload = await request(`/users/${mentionUserId}/mentions?page=1&pageSize=10`)
-      setMentions(payload.data || [])
-    }, 'Mentions loaded')
   }
 
   const applyAuditFilters = async (event) => {
@@ -816,81 +971,172 @@ function App() {
             </details>
           </section>
         </div>
-        <Toast error={error} notice={notice} />
+        <Toast error={error} notice={notice} onDismiss={dismissToast} />
       </div>
+    )
+  }
+
+  if (isAdmin) {
+    return (
+      <>
+        <AdminPanel
+          activeAdminMeta={activeAdminMeta}
+          activePanel={activePanel}
+          addComment={addComment}
+          addDependency={addDependency}
+          adminManageProjectId={adminManageProjectId}
+          adminPage={adminPage}
+          adminProjectFilterLabel={adminProjectFilterLabel}
+          adminProjectIds={adminProjectIds}
+          adminTicketPatch={adminTicketPatch}
+          adminTickets={adminTickets}
+          applyAuditFilters={applyAuditFilters}
+          attachmentFile={attachmentFile}
+          auditFilter={auditFilter}
+          auditLogs={auditLogs}
+          busy={busy}
+          clearAuditFilters={clearAuditFilters}
+          commentText={commentText}
+          comments={comments}
+          createProject={createProject}
+          createTicket={createTicket}
+          createUser={createUser}
+          csvFile={csvFile}
+          currentUser={currentUser}
+          deleteAdminTicket={deleteAdminTicket}
+          deleteAttachment={deleteAttachment}
+          deleteComment={deleteComment}
+          deleteProject={deleteProject}
+          deleteUser={deleteUser}
+          deletedProjects={deletedProjects}
+          deletedTickets={deletedTickets}
+          dependencies={dependencies}
+          dependencyId={dependencyId}
+          editingCommentId={editingCommentId}
+          editingCommentText={editingCommentText}
+          exportAdminTicketsCsv={exportAdminTicketsCsv}
+          importCsv={importCsv}
+          localAttachments={localAttachments}
+          logout={logout}
+          projectEditorProject={projectEditorProject}
+          projectForm={projectForm}
+          projectPatch={projectPatch}
+          projects={projects}
+          refreshAll={refreshAll}
+          removeDependency={removeDependency}
+          restoreProject={restoreProject}
+          restoreTicket={restoreTicket}
+          selectedAdminTicket={selectedAdminTicket}
+          selectedProjectId={selectedProjectId}
+          selectedTicketId={selectedTicketId}
+          setActivePanel={setActivePanel}
+          setAdminManageProjectId={setAdminManageProjectId}
+          setAdminPage={setAdminPage}
+          setAdminProjectIds={setAdminProjectIds}
+          setAdminTicketPatch={setAdminTicketPatch}
+          setAttachmentFile={setAttachmentFile}
+          setAuditFilter={setAuditFilter}
+          setCommentText={setCommentText}
+          setCsvFile={setCsvFile}
+          setDependencyId={setDependencyId}
+          setEditingCommentId={setEditingCommentId}
+          setEditingCommentText={setEditingCommentText}
+          setProjectForm={setProjectForm}
+          setProjectPatch={setProjectPatch}
+          setSelectedAdminTicketId={setSelectedAdminTicketId}
+          setSelectedProjectId={setSelectedProjectId}
+          setSelectedTicketId={setSelectedTicketId}
+          setTicketForm={setTicketForm}
+          setUserForm={setUserForm}
+          setUserPatch={setUserPatch}
+          startEditComment={startEditComment}
+          ticketForm={ticketForm}
+          tickets={tickets}
+          toggleAdminProjectFilter={toggleAdminProjectFilter}
+          updateAdminTicket={updateAdminTicket}
+          updateComment={updateComment}
+          updateProject={updateProject}
+          updateUser={updateUser}
+          uploadAttachment={uploadAttachment}
+          userForm={userForm}
+          userPatch={userPatch}
+          users={users}
+          visibleAdminOpenTickets={visibleAdminOpenTickets}
+          visibleAdminOverdueTickets={visibleAdminOverdueTickets}
+          visibleAdminTickets={visibleAdminTickets}
+        />
+        <Toast error={error} notice={notice} onDismiss={dismissToast} />
+      </>
     )
   }
 
   return (
     <div className="app-bg min-h-screen text-slate-900">
-      <header className="app-header">
-        <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-teal-700 text-white shadow-lg shadow-teal-900/20">
-              <GitBranch size={21} />
-            </div>
-            <div>
-              <div className="text-lg font-semibold">IssueFlow</div>
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span>{currentUser?.username || 'Signed in'}</span>
-                {currentUser?.role && <RoleBadge value={currentUser.role} />}
+        <header className="app-header">
+          <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-teal-700 text-white shadow-lg shadow-teal-900/20">
+                <GitBranch size={21} />
+              </div>
+              <div>
+                <div className="text-lg font-semibold">IssueFlow</div>
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span>{currentUser?.username || 'Signed in'}</span>
+                  {currentUser?.role && <RoleBadge value={currentUser.role} />}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="icon-btn" onClick={refreshAll} disabled={busy} title="Refresh">
-              <RefreshCw size={17} />
-            </button>
-            <button className="btn" onClick={logout}>
-              <LogOut size={17} />
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto flex max-w-[1500px] flex-col gap-6 px-4 py-5 sm:px-6">
-        <section className="panel motion-rise accent-strip overflow-hidden">
-          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <GitBranch size={15} />
-                {isAdmin ? 'Admin console' : 'Project'}
-              </div>
-              <h1 className="text-2xl font-semibold tracking-normal">{isAdmin ? 'Operations overview' : selectedProject?.name || 'Select a project'}</h1>
-              <p className="mt-1 max-w-3xl text-sm text-slate-500">
-                {isAdmin
-                  ? 'Manage projects, users, recovery, and audit activity across the whole IssueFlow workspace.'
-                  : selectedProject?.description || 'Choose a project to load tickets, workload, comments, and exports.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-200 bg-white/80 px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {projects.map((project) => (
-                <button
-                  key={project.id}
-                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
-                    String(project.id) === String(selectedProjectId)
-                      ? 'border-teal-300 bg-teal-50 text-teal-900 shadow-sm shadow-teal-900/10'
-                      : 'border-slate-200 bg-white text-slate-600 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm'
-                  }`}
-                  type="button"
-                  onClick={() => setSelectedProjectId(String(project.id))}
-                >
-                  <span>{project.name}</span>
-                  <ChevronRight size={14} />
-                </button>
-              ))}
-              <button className="icon-btn" type="button" onClick={loadProjects} title="Refresh projects">
-                <RefreshCw size={15} />
+            <div className="flex items-center gap-2">
+              <button className="icon-btn" onClick={refreshAll} disabled={busy} title="Refresh">
+                <RefreshCw size={17} />
+              </button>
+              <button className="btn" onClick={logout}>
+                <LogOut size={17} />
+                Logout
               </button>
             </div>
           </div>
-        </section>
+        </header>
 
-        {!isAdmin && (
+      <main className="mx-auto flex max-w-[1500px] flex-col gap-6 px-4 py-5 sm:px-6">
+          <section className="panel motion-rise accent-strip overflow-hidden">
+            <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <GitBranch size={15} />
+                  Project
+                </div>
+                <h1 className="text-2xl font-semibold tracking-normal">{selectedProject?.name || 'Select a project'}</h1>
+                <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                  {selectedProject?.description || 'Choose a project to load tickets, workload, comments, and exports.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 bg-white/80 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                      String(project.id) === String(selectedProjectId)
+                        ? 'border-teal-300 bg-teal-50 text-teal-900 shadow-sm shadow-teal-900/10'
+                        : 'border-slate-200 bg-white text-slate-600 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm'
+                    }`}
+                    type="button"
+                    onClick={() => setSelectedProjectId(String(project.id))}
+                  >
+                    <span>{project.name}</span>
+                    <ChevronRight size={14} />
+                  </button>
+                ))}
+                <button className="icon-btn" type="button" onClick={loadProjects} title="Refresh projects">
+                  <RefreshCw size={15} />
+                </button>
+              </div>
+            </div>
+          </section>
+
           <>
             <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard icon={Bug} label="Project tickets" value={tickets.length} color="teal" />
@@ -1203,31 +1449,7 @@ function App() {
                   ))}
                 </div>
 
-                <form className="rounded-md bg-violet-50 p-3 ring-1 ring-violet-100" onSubmit={loadMentions}>
-                  <div className="mb-2 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-violet-950">Mentions</h3>
-                    <AtSign size={16} className="text-violet-700" />
-                  </div>
-                  <div className="flex gap-2">
-                    <select className="field" value={mentionUserId} onChange={(event) => setMentionUserId(event.target.value)} required>
-                      <option value="">Select user</option>
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>{user.username}</option>
-                      ))}
-                    </select>
-                    <button className="icon-btn bg-white" title="Load mentions">
-                      <Search size={15} />
-                    </button>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {mentions.map((mention) => (
-                      <div key={mention.id} className="rounded-md bg-white p-2 text-xs text-slate-700 ring-1 ring-violet-100">
-                        <div className="font-semibold">Ticket #{mention.ticketId}</div>
-                        <div className="line-clamp-2">{mention.content}</div>
-                      </div>
-                    ))}
-                  </div>
-                </form>
+                <MentionInbox currentUser={currentUser} request={request} users={users} />
               </div>
             )}
 
@@ -1271,263 +1493,9 @@ function App() {
               </aside>
             </section>
           </>
-        )}
-
-        {isAdmin && (
-          <section className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard icon={Users} label="Users" value={users.length} color="violet" />
-              <MetricCard icon={GitBranch} label="Projects" value={projects.length} color="teal" />
-              <MetricCard icon={ArchiveRestore} label="Deleted" value={deletedProjects.length + deletedTickets.length} color="amber" />
-              <MetricCard icon={History} label="Audit events" value={auditLogs.length} color="sky" />
-            </div>
-
-            <section className="panel motion-rise overflow-hidden border-t-4 border-t-teal-600 p-5">
-              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">Project portfolio</h2>
-                  <p className="text-sm text-slate-500">See all project tickets together, or inspect one project at a time.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    className={`btn h-9 px-3 ${adminProjectScope === 'all' ? 'border-teal-600 bg-teal-50 text-teal-800' : ''}`}
-                    type="button"
-                    onClick={() => setAdminProjectScope('all')}
-                  >
-                    All projects
-                  </button>
-                  {projects.map((project) => (
-                    <button
-                      key={project.id}
-                      className={`btn h-9 px-3 ${String(adminProjectScope) === String(project.id) ? 'border-sky-600 bg-sky-50 text-sky-800' : ''}`}
-                      type="button"
-                      onClick={() => {
-                        setAdminProjectScope(String(project.id))
-                        setSelectedProjectId(String(project.id))
-                      }}
-                    >
-                      {project.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                <MetricCard icon={Bug} label="Visible tickets" value={visibleAdminTickets.length} color="teal" />
-                <MetricCard icon={CalendarDays} label="Open tickets" value={visibleAdminOpenTickets.length} color="sky" />
-                <MetricCard icon={CircleDot} label="Overdue" value={visibleAdminOverdueTickets.length} color="rose" />
-              </div>
-
-              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                <table className="w-full min-w-[820px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Project</th>
-                      <th className="px-4 py-3">Ticket</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Priority</th>
-                      <th className="px-4 py-3">Assignee</th>
-                      <th className="px-4 py-3">Due</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {visibleAdminTickets.map((ticket) => (
-                      <tr key={ticket.id} className="transition hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-700">{ticket.projectName || projectNameFor(projects, ticket.projectId)}</td>
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-slate-900">{ticket.title}</div>
-                          <div className="line-clamp-1 text-xs text-slate-500">{ticket.description}</div>
-                        </td>
-                        <td className="px-4 py-3"><StatusBadge value={ticket.status} /></td>
-                        <td className="px-4 py-3"><PriorityBadge value={ticket.priority} overdue={ticket.isOverdue} /></td>
-                        <td className="px-4 py-3">{usernameFor(users, ticket.assigneeId) || 'Unassigned'}</td>
-                        <td className="px-4 py-3">{formatDate(ticket.dueDate)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {visibleAdminTickets.length === 0 && <EmptyState label="No tickets for this project scope" />}
-              </div>
-            </section>
-
-            <div className="grid gap-5 xl:grid-cols-2">
-              <section className="panel interactive-card overflow-hidden border-t-4 border-t-violet-500 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">User management</h2>
-                    <p className="text-sm text-slate-500">Create users and update roles from one place.</p>
-                  </div>
-                  <UserCog size={19} className="text-violet-700" />
-                </div>
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <UserForm form={userForm} setForm={setUserForm} onSubmit={createUser} busy={busy} />
-                  <form className="grid gap-3" onSubmit={updateUser}>
-                    <Field label="User" required>
-                      <select className="field" value={userPatch.userId} onChange={(event) => setUserPatch({ ...userPatch, userId: event.target.value })} required>
-                        <option value="">Select user</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>{user.username}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Role" required>
-                      <Select value={userPatch.role} values={ROLES} onChange={(role) => setUserPatch({ ...userPatch, role })} required />
-                    </Field>
-                    <Field label="Full name" required>
-                      <input className="field" value={userPatch.fullName} onChange={(event) => setUserPatch({ ...userPatch, fullName: event.target.value })} required />
-                    </Field>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button className="btn border-violet-600 text-violet-700 hover:bg-violet-50" disabled={!userPatch.userId || busy}>
-                        <Save size={16} />
-                        Save
-                      </button>
-                      <button className="btn border-rose-200 text-rose-700 hover:bg-rose-50" type="button" onClick={deleteUser} disabled={!userPatch.userId || busy}>
-                        <Trash2 size={16} />
-                        Delete
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </section>
-
-              <section className="panel interactive-card overflow-hidden border-t-4 border-t-teal-600 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">Project management</h2>
-                    <p className="text-sm text-slate-500">Create, edit, soft-delete, and restore project records.</p>
-                  </div>
-                  <GitBranch size={19} className="text-teal-700" />
-                </div>
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <form className="space-y-3" onSubmit={createProject}>
-                    <h3 className="text-sm font-semibold">New project</h3>
-                    <Field label="Name" required>
-                      <input
-                        className="field"
-                        value={projectForm.name}
-                        onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })}
-                        required
-                      />
-                    </Field>
-                    <Field label="Description">
-                      <textarea
-                        className="textarea-field min-h-24"
-                        value={projectForm.description}
-                        onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })}
-                      />
-                    </Field>
-                    <button className="btn btn-primary w-full" disabled={busy}>
-                      <Plus size={16} />
-                      Create
-                    </button>
-                  </form>
-
-                  <form className="space-y-3" onSubmit={updateProject}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold">Selected project</h3>
-                      <button className="icon-btn h-8 w-8 border-rose-200 text-rose-700 hover:bg-rose-50" type="button" onClick={deleteProject} disabled={!selectedProjectId} title="Soft delete project">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <Field label="Name" required>
-                      <input
-                        className="field"
-                        value={projectPatch.name}
-                        onChange={(event) => setProjectPatch({ ...projectPatch, name: event.target.value })}
-                        required
-                        disabled={!selectedProjectId}
-                      />
-                    </Field>
-                    <Field label="Description">
-                      <textarea
-                        className="textarea-field min-h-24"
-                        value={projectPatch.description}
-                        onChange={(event) => setProjectPatch({ ...projectPatch, description: event.target.value })}
-                        disabled={!selectedProjectId}
-                      />
-                    </Field>
-                    <button className="btn w-full border-sky-600 text-sky-700 hover:bg-sky-50" disabled={!selectedProjectId || busy}>
-                      <Save size={16} />
-                      Save project
-                    </button>
-                  </form>
-                </div>
-              </section>
-            </div>
-
-            <div className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-              <section className="panel interactive-card overflow-hidden border-t-4 border-t-amber-500 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">Recovery</h2>
-                    <p className="text-sm text-slate-500">Restore soft-deleted tickets and projects.</p>
-                  </div>
-                  <ArchiveRestore size={19} className="text-amber-700" />
-                </div>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                  <section>
-                    <h3 className="mb-2 text-sm font-semibold">Deleted tickets</h3>
-                    <div className="space-y-2">
-                      {deletedTickets.map((ticket) => (
-                        <RestoreRow key={ticket.id} label={ticket.title} onClick={() => restoreTicket(ticket.id)} />
-                      ))}
-                      {deletedTickets.length === 0 && <EmptyState label="No deleted tickets" />}
-                    </div>
-                  </section>
-                  <section>
-                    <h3 className="mb-2 text-sm font-semibold">Deleted projects</h3>
-                    <div className="space-y-2">
-                      {deletedProjects.map((project) => (
-                        <RestoreRow key={project.id} label={project.name} onClick={() => restoreProject(project.id)} />
-                      ))}
-                      {deletedProjects.length === 0 && <EmptyState label="No deleted projects" />}
-                    </div>
-                  </section>
-                </div>
-              </section>
-
-              <section className="panel interactive-card overflow-hidden border-t-4 border-t-sky-500 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">Audit log</h2>
-                    <p className="text-sm text-slate-500">Filter operational events by action, entity, actor, or ID.</p>
-                  </div>
-                  <History size={19} className="text-sky-700" />
-                </div>
-                <form className="mb-4 grid gap-3 rounded-md bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-5" onSubmit={applyAuditFilters}>
-                  <Select value={auditFilter.action} values={AUDIT_ACTIONS} placeholder="Action" onChange={(action) => setAuditFilter({ ...auditFilter, action })} />
-                  <Select value={auditFilter.entityType} values={AUDIT_ENTITIES} placeholder="Entity" onChange={(entityType) => setAuditFilter({ ...auditFilter, entityType })} />
-                  <Select value={auditFilter.actor} values={AUDIT_ACTORS} placeholder="Actor" onChange={(actor) => setAuditFilter({ ...auditFilter, actor })} />
-                  <input className="field" placeholder="Entity ID" value={auditFilter.entityId} onChange={(event) => setAuditFilter({ ...auditFilter, entityId: event.target.value })} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <button className="btn btn-primary">
-                      <Search size={15} />
-                      Apply
-                    </button>
-                    <button className="btn" type="button" onClick={clearAuditFilters}>
-                      <X size={15} />
-                      Clear
-                    </button>
-                  </div>
-                </form>
-                <div className="grid max-h-[560px] gap-3 overflow-y-auto pr-1">
-                  {auditLogs.slice(0, 60).map((log) => (
-                    <AuditLogCard
-                      key={log.id}
-                      log={log}
-                      users={users}
-                      projects={[...projects, ...deletedProjects]}
-                      tickets={[...adminTickets, ...tickets, ...deletedTickets]}
-                    />
-                  ))}
-                </div>
-              </section>
-            </div>
-          </section>
-        )}
       </main>
 
-      <Toast error={error} notice={notice} />
+      <Toast error={error} notice={notice} onDismiss={dismissToast} />
     </div>
   )
 }
@@ -1578,120 +1546,6 @@ function Select({ value, values, onChange, placeholder, required = false }) {
   )
 }
 
-function MentionTextarea({ value, onChange, users, placeholder = '', required = false, disabled = false }) {
-  const textareaRef = useRef(null)
-  const [trigger, setTrigger] = useState(null)
-  const [highlightedIndex, setHighlightedIndex] = useState(0)
-  const mentionQuery = trigger?.query
-
-  const suggestions = useMemo(() => {
-    if (!trigger) return []
-    const query = trigger.query.toLowerCase()
-    return users
-      .filter((user) => {
-        const username = String(user.username || '').toLowerCase()
-        const fullName = String(user.fullName || '').toLowerCase()
-        return username.includes(query) || fullName.includes(query)
-      })
-      .slice(0, 6)
-  }, [trigger, users])
-
-  useEffect(() => {
-    setHighlightedIndex(0)
-  }, [mentionQuery])
-
-  const refreshTrigger = useCallback((text, caret) => {
-    setTrigger(findMentionTrigger(text, caret))
-  }, [])
-
-  const selectMention = useCallback((user) => {
-    if (!trigger) return
-    const before = value.slice(0, trigger.start)
-    const after = value.slice(trigger.end)
-    const nextValue = `${before}@${user.username} ${after}`
-    const nextCaret = before.length + user.username.length + 2
-
-    onChange(nextValue)
-    setTrigger(null)
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus()
-      textareaRef.current?.setSelectionRange(nextCaret, nextCaret)
-    })
-  }, [onChange, trigger, value])
-
-  const handleChange = (event) => {
-    const nextValue = event.target.value
-    onChange(nextValue)
-    refreshTrigger(nextValue, event.target.selectionStart)
-  }
-
-  const handleKeyDown = (event) => {
-    if (!trigger || suggestions.length === 0) return
-
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      setHighlightedIndex((index) => (index + 1) % suggestions.length)
-    }
-
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setHighlightedIndex((index) => (index - 1 + suggestions.length) % suggestions.length)
-    }
-
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      event.preventDefault()
-      selectMention(suggestions[highlightedIndex])
-    }
-
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      setTrigger(null)
-    }
-  }
-
-  return (
-    <div className="relative">
-      <textarea
-        ref={textareaRef}
-        className="textarea-field"
-        value={value}
-        onChange={handleChange}
-        onClick={(event) => refreshTrigger(value, event.currentTarget.selectionStart)}
-        onKeyDown={handleKeyDown}
-        onKeyUp={(event) => refreshTrigger(value, event.currentTarget.selectionStart)}
-        onBlur={() => window.setTimeout(() => setTrigger(null), 120)}
-        placeholder={placeholder}
-        required={required}
-        disabled={disabled}
-      />
-
-      {trigger && suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-teal-200 bg-white shadow-lg">
-          {suggestions.map((user, index) => (
-            <button
-              key={user.id}
-              type="button"
-              className={`flex w-full items-center gap-3 px-3 py-2 text-left transition ${
-                index === highlightedIndex ? 'bg-teal-50' : 'hover:bg-slate-50'
-              }`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => selectMention(user)}
-            >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-700 text-xs font-bold text-white">
-                {initialsFor(user.fullName)}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold text-slate-900">@{user.username}</span>
-                <span className="block truncate text-xs text-slate-500">{user.fullName} · {user.role}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function TabButton({ active, onClick, icon: Icon, label }) {
   return (
     <button
@@ -1707,23 +1561,20 @@ function TabButton({ active, onClick, icon: Icon, label }) {
   )
 }
 
-function RestoreRow({ label, onClick }) {
-  return (
-    <div className="interactive-card flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white p-2 shadow-sm">
-      <span className="truncate text-sm">{label}</span>
-      <button className="icon-btn h-8 w-8" onClick={onClick} title="Restore">
-        <ArchiveRestore size={15} />
-      </button>
-    </div>
-  )
-}
-
-function Toast({ error, notice }) {
+function Toast({ error, notice, onDismiss }) {
   if (!error && !notice) return null
   return (
     <div className="fixed bottom-4 left-1/2 z-50 w-[min(92vw,560px)] -translate-x-1/2">
-      <div className={`motion-rise rounded-lg px-4 py-3 text-sm font-bold shadow-xl ${error ? 'bg-rose-600 text-white shadow-rose-900/20' : 'bg-slate-900 text-white shadow-slate-900/20'}`}>
-        {error || notice}
+      <div className={`motion-rise flex items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm font-bold shadow-xl ${error ? 'bg-rose-600 text-white shadow-rose-900/20' : 'bg-slate-900 text-white shadow-slate-900/20'}`}>
+        <span>{error || notice}</span>
+        <button
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white"
+          type="button"
+          onClick={onDismiss}
+          title="Dismiss message"
+        >
+          <X size={15} />
+        </button>
       </div>
     </div>
   )
@@ -1761,8 +1612,8 @@ function MetricCard({ icon: Icon, label, value, color }) {
 
 function RoleBadge({ value }) {
   const classes = {
-    ADMIN: 'bg-violet-50 text-violet-700 ring-violet-200',
-    DEVELOPER: 'bg-teal-50 text-teal-700 ring-teal-200',
+    ADMIN: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
+    DEVELOPER: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   }
   return <span className={`badge ring-1 ${classes[value] || classes.DEVELOPER}`}>{value}</span>
 }
@@ -1796,125 +1647,9 @@ function PriorityBadge({ value, overdue }) {
   return <span className={`badge ring-1 ${classes[value] || classes.LOW}`}>{overdue ? `${value} OVERDUE` : value}</span>
 }
 
-function AuditActionBadge({ value }) {
-  const danger = ['DELETE', 'DELETE_ATTACHMENT']
-  const success = ['CREATE', 'RESTORE', 'IMPORT']
-  const system = ['AUTO_ASSIGN', 'AUTO_ESCALATE']
-  let classes = 'bg-slate-100 text-slate-700 ring-slate-200'
-  if (danger.includes(value)) classes = 'bg-rose-50 text-rose-700 ring-rose-200'
-  if (success.includes(value)) classes = 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-  if (system.includes(value)) classes = 'bg-amber-50 text-amber-700 ring-amber-200'
-  if (value === 'UPDATE') classes = 'bg-sky-50 text-sky-700 ring-sky-200'
-  return <span className={`badge ring-1 ${classes}`}>{value}</span>
-}
-
-function AuditLogCard({ log, users, projects, tickets }) {
-  const actor = auditActorLabel(log, users)
-  const entity = auditEntityLabel(log, { users, projects, tickets })
-  const tone = ['DELETE', 'DELETE_ATTACHMENT'].includes(log.action) ? 'border-l-rose-500' : log.actor === 'SYSTEM' ? 'border-l-amber-500' : 'border-l-sky-500'
-
-  return (
-    <article className={`rounded-lg border border-slate-200 border-l-4 ${tone} bg-white p-4 text-sm shadow-sm`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <AuditActionBadge value={log.action} />
-        <span className="text-xs font-semibold text-slate-500">{formatDate(log.timestamp)}</span>
-      </div>
-      <div className="mt-3 text-base font-semibold text-slate-900">
-        {auditActionSentence(log.action)} {entity}
-      </div>
-      <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
-        <div>
-          <span className="block font-bold uppercase tracking-wide text-slate-400">Performed by</span>
-          <span>{actor}</span>
-        </div>
-        <div>
-          <span className="block font-bold uppercase tracking-wide text-slate-400">Entity</span>
-          <span>{log.entityType} #{log.entityId}</span>
-        </div>
-        <div>
-          <span className="block font-bold uppercase tracking-wide text-slate-400">Source</span>
-          <span>{log.actor}</span>
-        </div>
-      </div>
-    </article>
-  )
-}
-
 function usernameFor(users, id) {
   if (!id) return ''
   return users.find((user) => user.id === id)?.username || `#${id}`
-}
-
-function projectNameFor(projects, id) {
-  return projects.find((project) => String(project.id) === String(id))?.name || `Project #${id}`
-}
-
-function auditActorLabel(log, users) {
-  if (log.actor === 'SYSTEM') return 'System automation'
-  const userId = log.performedBy || (log.entityType === 'AUTH' ? log.entityId : null)
-  const user = users.find((entry) => String(entry.id) === String(userId))
-  if (user) return `${user.fullName} (@${user.username})`
-  return 'User action (actor id not recorded)'
-}
-
-function auditEntityLabel(log, { users, projects, tickets }) {
-  if (log.entityType === 'USER' || log.entityType === 'AUTH') {
-    const user = users.find((entry) => String(entry.id) === String(log.entityId))
-    if (user) return `${user.fullName} (@${user.username})`
-  }
-
-  if (log.entityType === 'PROJECT') {
-    const project = projects.find((entry) => String(entry.id) === String(log.entityId))
-    if (project) return project.name
-  }
-
-  if (log.entityType === 'TICKET') {
-    const ticket = tickets.find((entry) => String(entry.id) === String(log.entityId))
-    if (ticket) return ticket.title
-  }
-
-  return `${log.entityType.toLowerCase()} #${log.entityId}`
-}
-
-function auditActionSentence(action) {
-  const labels = {
-    CREATE: 'Created',
-    UPDATE: 'Updated',
-    DELETE: 'Deleted',
-    RESTORE: 'Restored',
-    LOGIN: 'Signed in as',
-    LOGOUT: 'Signed out',
-    AUTO_ASSIGN: 'Auto-assigned',
-    AUTO_ESCALATE: 'Auto-escalated',
-    ADD_DEPENDENCY: 'Added dependency',
-    REMOVE_DEPENDENCY: 'Removed dependency',
-    IMPORT: 'Imported',
-    EXPORT: 'Exported',
-    UPLOAD_ATTACHMENT: 'Uploaded attachment',
-    DELETE_ATTACHMENT: 'Deleted attachment',
-  }
-  return labels[action] || action
-}
-
-function findMentionTrigger(value, caret) {
-  const beforeCaret = value.slice(0, caret)
-  const atIndex = beforeCaret.lastIndexOf('@')
-  if (atIndex === -1) return null
-  if (atIndex > 0 && !/\s/.test(beforeCaret[atIndex - 1])) return null
-
-  const query = beforeCaret.slice(atIndex + 1)
-  if (/\s/.test(query) || !/^[A-Za-z0-9_]*$/.test(query)) return null
-
-  return { start: atIndex, end: caret, query }
-}
-
-function initialsFor(value) {
-  return String(value || '?')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('')
 }
 
 function formatDate(value) {
@@ -1932,8 +1667,31 @@ function toInstant(value) {
   return new Date(value).toISOString()
 }
 
+function toDateTimeLocal(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
 function compact(value) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== null && entry !== undefined && entry !== ''))
+}
+
+function downloadText(text, filename, type) {
+  const blob = new Blob([text], { type })
+  const href = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = href
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(href)
+}
+
+function csvValue(value) {
+  const text = String(value ?? '')
+  if (!/[",\n]/.test(text)) return text
+  return `"${text.replaceAll('"', '""')}"`
 }
 
 export default App
